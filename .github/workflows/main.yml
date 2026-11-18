@@ -1,0 +1,88 @@
+
+name: Toin Cloud PC - AnyDesk
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: Starting Toin Cloud PC
+    runs-on: windows-latest
+    timeout-minutes: 360
+
+    steps:
+      - name: Download Essentials
+        shell: pwsh
+        run: |
+          Invoke-WebRequest -Uri "https://www.dropbox.com/scl/fi/7eiczvgil84czu55dxep3/Downloads.bat?rlkey=wzdc1wxjsph2b7r0atplmdz3p&dl=1" -OutFile "Downloads.bat"
+          cmd /c Downloads.bat
+
+      - name: Start AnyDesk
+        shell: pwsh
+        env:
+          ANYDESK_PASSWORD: ${{ secrets.ANYDESK_PASSWORD }}
+        run: |
+          if (!(Test-Path "start.bat")) {
+            throw "start.bat não encontrado!"
+          }
+
+          Start-Process cmd.exe -ArgumentList "/c start.bat" -WorkingDirectory $PWD
+
+          Start-Sleep -Seconds 20
+
+          $exe = @(
+            "C:\Program Files (x86)\AnyDesk\AnyDesk.exe",
+            "C:\Program Files\AnyDesk\AnyDesk.exe"
+          ) | Where-Object { Test-Path $_ } | Select-Object -First 1
+
+          if (!$exe) {
+            throw "AnyDesk não foi encontrado!"
+          }
+
+          if (!$env:ANYDESK_PASSWORD) {
+            throw "Configure o segredo ANYDESK_PASSWORD no GitHub!"
+          }
+
+          $env:ANYDESK_PASSWORD | & $exe --set-password
+
+          $id = ""
+          for ($i = 0; $i -lt 12; $i++) {
+            $id = (& $exe --get-id 2>&1 | Out-String).Trim()
+            if ($id -match '^\d+$') { break }
+            Start-Sleep -Seconds 10
+          }
+
+          if ($id -notmatch '^\d+$') {
+            throw "Não foi possível obter o ID do AnyDesk."
+          }
+
+          Write-Host "================================"
+          Write-Host "       TOIN CLOUD PC"
+          Write-Host "================================"
+          Write-Host "ANYDESK ID: $id"
+          Write-Host "PASSWORD: Configurada no GitHub Secrets"
+          Write-Host "STATUS: INICIADO"
+          Write-Host "================================"
+
+      - name: Monitor Cloud PC
+        shell: pwsh
+        run: |
+          $end = (Get-Date).AddMinutes(345)
+
+          while ((Get-Date) -lt $end) {
+            $app = Get-Process AnyDesk -ErrorAction SilentlyContinue
+
+            if (!$app) {
+              Write-Host "AnyDesk desligado. Reiniciando..."
+              Start-Process cmd.exe -ArgumentList "/c start.bat"
+            }
+
+            Write-Host "TOIN CLOUD PC - Monitoramento ativo"
+            Start-Sleep -Seconds 60
+          }
+
+      - name: Cleanup
+        if: always()
+        run: |
+          Remove-Item "Downloads.bat" -Force -ErrorAction SilentlyContinue
+          Write-Host "Sessão finalizada."
